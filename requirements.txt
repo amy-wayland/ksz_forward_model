@@ -1,0 +1,10 @@
+numpy>=1.24
+scipy>=1.10
+healpy>=1.16
+matplotlib>=3.7
+h5py>=3.9
+astropy>=5.3
+hdfstream          # remote partial reads from the Durham FLAMINGO server
+lightcone_io       # FLAMINGO lightcone shells + halo lightcones
+swiftsimio         # optional, for SOAP catalogues and snapshots
+unyt
