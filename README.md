@@ -44,7 +44,8 @@ python 05_plot_datavector.py --cap cap_profile.npz --label "FLAMINGO L1_m9"
 - Builds the kSZ temperature map from the Doppler B parameter, $b$, using $\Delta T = −T_{\rm CMB} \times \Sigma_{i \in {\rm shells}} b_i$.
 
 ### 03_select_sample.py:
-- Build the sample to stack on. There are two selection modes:
+- Build the sample to stack on by joining the halo lightcone to SOAP.
+- There are two selection modes:
   - Galaxy-like. This follows McCarthy et al. 2024 in which a minimum stellar mass cut is applied.
     ```bash
     python 03_select_sample.py --sample cmass
@@ -56,3 +57,6 @@ python 05_plot_datavector.py --cap cap_profile.npz --label "FLAMINGO L1_m9"
 
 ### 04_stack_cap.py:
 - Computes the final stacked kSZ measurement via CAP on each galaxy, with velocity weighting, and obtains bootstrap errors.
+
+### 05_plot_datavector.py:
+- Plots the stacked kSZ profile as a function of aperture radius.
