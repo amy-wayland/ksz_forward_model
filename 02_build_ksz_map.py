@@ -89,6 +89,11 @@ def main():
     p.add_argument("--remote", action="store_true",
                    help="stream from the Durham server instead")
     p.add_argument("--out", default=None)
+    p.add_argument("--extra-1pz", action="store_true",
+                   help="multiply each DopplerB shell by a further 1+z_mid, on "
+                        "top of the released correction. Consistency with the "
+                        "DM maps suggests the released maps are low by this "
+                        "factor (provisional)")
     args = p.parse_args()
 
     if not args.remote and args.basedir is None:
@@ -155,7 +160,18 @@ def main():
                     "Central redshift assumed for correction"):
             if key in attrs:
                 print(f"  {key}: {np.atleast_1d(attrs[key])[0]}")
-
+                
+        # Provisional extra (1+z): applied after the checksum, so the checksum
+        # still validates the released data as read.
+        if args.extra_1pz:
+            z_mid = float(np.atleast_1d(attrs.get(
+                "Central redshift assumed for correction", [np.nan]))[0])
+            if not np.isfinite(z_mid):
+                raise SystemExit("--extra-1pz: this shell has no 'Central "
+                                 "redshift assumed for correction' attribute")
+            b *= 1.0 + z_mid
+            print(f"  DopplerB multiplied by a further 1+z = {1 + z_mid:.3f}")
+            
         if total is None:
             total = b
         else:
@@ -177,7 +193,8 @@ def main():
 
     tag = (f"shells{'-'.join(str(s) for s in shells)}" if args.shells
            else f"shell{args.shell}")
-    out = args.out or f"dT_ksz_{SIM}_{LIGHTCONE}_{tag}_{args.nside_dir}.npy"
+    suffix = "_x1pz" if args.extra_1pz else ""
+    out = args.out or f"dT_ksz_{SIM}_{LIGHTCONE}_{tag}_{args.nside_dir}{suffix}.npy"
     np.save(out, dT_uK)
     print(f"wrote {out}  ({os.path.getsize(out)/1e9:.2f} GB)")
 
