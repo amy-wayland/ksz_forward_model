@@ -31,6 +31,8 @@ def main():
                         "0 disables")
     p.add_argument("--max-objects", type=int, default=0,
                    help="subsample for a quick test run")
+    p.add_argument("--min-mstar", type=float, default=None,
+                   help="only stack catalogue rows with log10 M* above this")
     p.add_argument("--n-boot", type=int, default=500)
     p.add_argument("--out", default="cap_profile.npz")
     args = p.parse_args()
@@ -64,11 +66,14 @@ def main():
     # ----------------------------------------------------------------
     cat = np.load(args.catalogue)
     vec, v_r = cat["unit_vec"], cat["v_r_kms"]
-    if args.max_objects and len(vec) > args.max_objects:
-        idx = np.random.default_rng(0).choice(len(vec), args.max_objects, replace=False)
-        vec, v_r = vec[idx], v_r[idx]
+    idx = np.arange(len(vec))
+    if args.min_mstar is not None:
+        idx = idx[cat["log_mstar"] > args.min_mstar]
+    if args.max_objects and idx.size > args.max_objects:
+        idx = np.sort(np.random.default_rng(0).choice(idx, args.max_objects, replace=False))
+    vec, v_r = vec[idx], v_r[idx]
     print(f"catalogue: {len(vec)} objects, "
-          f"satellite fraction {1 - cat['is_central'].mean():.3f}")
+          f"satellite fraction {1 - cat['is_central'][idx].mean():.3f}")
 
     theta = (np.asarray(args.theta_list, dtype=float) if args.theta_list
              else np.geomspace(args.theta_min, args.theta_max, args.n_ap))
