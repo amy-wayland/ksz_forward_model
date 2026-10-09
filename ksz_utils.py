@@ -52,7 +52,7 @@ def find_shell_files(ls, base, shell_nr, lightcone="lightcone0",
 # CAP filter
 # --------------------------------------------------------------------------
 
-def cap_profile(sky_map, nside, vec, theta_d_rad, pix_area=None):
+def cap_profile(sky_map, nside, vec, theta_d_rad, pix_area=None, area_norm=False):
     """
     Compensated aperture photometry profile at one position.
 
@@ -90,11 +90,17 @@ def cap_profile(sky_map, nside, vec, theta_d_rad, pix_area=None):
     for i, td in enumerate(theta_d_rad):
         inner = ang < td
         outer = (ang >= td) & (ang < np.sqrt(2.0) * td)
-        out[i] = (vals[inner].sum() - vals[outer].sum()) * pix_area
+        if area_norm:
+            a = np.pi*td**2
+            v_in = vals[inner].mean() if inner.any() else vals[np.argmin(ang)]
+            v_out = vals[outer].mean() if outer.any() else v_in
+            out[i] = (v_in - v_out) * a
+        else:
+            out[i] = (vals[inner].sum() - vals[outer].sum()) * pix_area
     return out
 
 
-def cap_profiles_catalogue(sky_map, nside, vecs, theta_d_rad, progress_every=20000):
+def cap_profiles_catalogue(sky_map, nside, vecs, theta_d_rad, progress_every=20000, area_norm=False):
     """
     CAP profile for every object in a catalogue. 
     Returns (n_obj, n_ap).
@@ -103,7 +109,7 @@ def cap_profiles_catalogue(sky_map, nside, vecs, theta_d_rad, progress_every=200
     n = len(vecs)
     out = np.empty((n, len(theta_d_rad)))
     for i in range(n):
-        out[i] = cap_profile(sky_map, nside, vecs[i], theta_d_rad, pix_area)
+        out[i] = cap_profile(sky_map, nside, vecs[i], theta_d_rad, pix_area, area_norm)
         if progress_every and (i + 1) % progress_every == 0:
             print(f"    CAP {i + 1}/{n}", flush=True)
     return out
