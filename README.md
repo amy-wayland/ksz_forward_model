@@ -13,9 +13,9 @@ python -m pip install -r requirements.txt
 ```bash
 python 00_synthetic_test.py  # verify the machinery, no data needed
 python 01_explore_flamingo.py  # find out what is in the files
-python 02_build_ksz_map.py --shells 9 10 11 12 --remote
-python 03_select_sample.py --sample cmass --halo_dir <dir with lightcone_halos_*.hdf5>
-python 04_stack_cap.py --map dT_ksz_*.npy --catalogue sample_cmass_*.npz --beam 1.3
+python 02_build_ksz_map.py --shells 10 11 12 --remote
+python 03_select_sample.py --sample cmass --mstar-cut 10.9 --remote-halos
+python 04_stack_cap.py --map dT_ksz_*.npy --catalogue sample_cmass_*.npz --min-mstar 11.2 --beam 1.3
 python 05_plot_datavector.py --cap cap_profile.npz --label "FLAMINGO L1_m9"
 ```
 
@@ -48,7 +48,7 @@ python 05_plot_datavector.py --cap cap_profile.npz --label "FLAMINGO L1_m9"
 - There are two selection modes:
   - Galaxy-like. This follows McCarthy et al. 2024 in which a minimum stellar mass cut is applied.
     ```bash
-    python 03_select_sample.py --sample cmass
+    python 03_select_sample.py --sample cmass --mstar-cut 11.2
     ```
   - Halo-mass bin. This selects haloes directly in a bin of $M_{500{\rm c}}$ and stacks them.
     ```bash
