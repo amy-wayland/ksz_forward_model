@@ -10,6 +10,28 @@ from ksz_utils import (cap_profiles_catalogue, velocity_weighted_stack,
 # Stack the map around the sample with the CAP filter
 # --------------------------------------------------------------------------
 
+def load_beam(path):
+    """
+    Beam transfer function b_l from a text/CSV file: either one value per
+    line, or columns (ell, b_l), with or without a header, comma or
+    whitespace separated (e.g. the ACT DR5 f150 beam CSV).
+    """
+    rows = []
+    for line in open(path):
+        parts = line.replace(",", " ").split()
+        try:
+            rows.append([float(x) for x in parts])
+        except ValueError:
+            continue
+    arr = np.array(rows)
+    if arr.ndim == 1 or arr.shape[1] == 1:
+        return arr.ravel()
+    ell, bl = arr[:, 0].astype(int), arr[:, -1]
+    out = np.zeros(ell.max() + 1)
+    out[ell] = bl  # b_l indexed by ell, starting at 0
+    return out
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--map", required=True)  # map from 02_build_map.py
@@ -29,6 +51,13 @@ def main():
     p.add_argument("--beam", type=float, default=0.0,
                    help="Gaussian beam FWHM in arcmin (ACT f150 ~1.3, f090 ~2.1); "
                         "0 disables")
+    p.add_argument("--cap-area", choices=["pixels", "exact"], default="pixels",
+                   help="'exact' rescales the disc and ring to the exact "
+                        "area pi theta_d^2, as McCarthy+24 do")
+    p.add_argument("--velocity-key", default="v_r_kms",
+                   choices=["v_r_kms", "v_r_host_kms"],
+                   help="v_r_host_kms gives satellites their host's velocity "
+                        "(as McCarthy+24 do)")
     p.add_argument("--max-objects", type=int, default=0,
                    help="subsample for a quick test run")
     p.add_argument("--min-mstar", type=float, default=None,
@@ -49,8 +78,7 @@ def main():
         # McCarthy+24 use the measured ACT beam, applied in multipole space with
         # healpy's almxfl. That is the same operation as a Gaussian smooth with
         # a different b_l, so swapping one for the other is a two-line change.
-        bl = np.loadtxt(args.beam_file)
-        bl = bl[:, -1] if bl.ndim > 1 else bl
+        bl = load_beam(args.beam_file)
         lmax = min(len(bl) - 1, 3 * nside - 1)
         print(f"convolving with the beam in {args.beam_file}, lmax={lmax}")
         alm = hp.map2alm(sky.astype(np.float64), lmax=lmax)
@@ -65,7 +93,7 @@ def main():
     # Step 2: Apply CAP filter
     # ----------------------------------------------------------------
     cat = np.load(args.catalogue)
-    vec, v_r = cat["unit_vec"], cat["v_r_kms"]
+    vec, v_r = cat["unit_vec"], cat[args.velocity_key]
     idx = np.arange(len(vec))
     if args.min_mstar is not None:
         idx = idx[cat["log_mstar"] > args.min_mstar]
@@ -81,7 +109,8 @@ def main():
     print("apertures [arcmin]:", np.round(theta, 2))
 
     print("\nrunning CAP filter...", flush=True)
-    T_cap = cap_profiles_catalogue(sky, nside, vec, theta_rad) * SR_TO_ARCMIN2
+    T_cap = cap_profiles_catalogue(sky, nside, vec, theta_rad,
+                                   area_norm=(args.cap_area == "exact")) * SR_TO_ARCMIN2
 
     # ----------------------------------------------------------------
     # Step 3: Stack and bootstrap
@@ -99,7 +128,10 @@ def main():
         print(f"  {t:6.2f}    {s:9.4f} +/- {e:6.4f}    {n:9.4f}")
 
     np.savez(args.out, theta_arcmin=theta, T_ksz=stack, T_err=err, T_null=null,
-             n_obj=len(vec), beam_fwhm_arcmin=args.beam)
+             n_obj=len(vec), beam_fwhm_arcmin=args.beam,
+             beam_file=str(args.beam_file), cap_area=args.cap_area,
+             velocity_key=args.velocity_key,
+             min_mstar=np.nan if args.min_mstar is None else args.min_mstar)
     print(f"\nwrote {args.out}")
 
 
