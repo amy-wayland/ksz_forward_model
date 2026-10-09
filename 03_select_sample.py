@@ -110,14 +110,27 @@ def load_soap(snap, remote, soap_dir):
     host = col(HOST_FOF)
     vel = col(VELOCITY).astype(np.float64)  # km/s
 
+    # SOAP velocities carry a-scale exponent 1: physical peculiar velocity =
+    # a * stored. The ratio of the two conversion factors is that a-factor.
+    vattrs = dict(node_for(VELOCITY).attrs)
+    k_phys = "Conversion factor to physical CGS (including cosmological corrections)"
+    k_com = "Conversion factor to CGS (not including cosmological corrections)"
+    if k_phys in vattrs and k_com in vattrs:
+        afac = float(np.atleast_1d(vattrs[k_phys])[0]) / float(np.atleast_1d(vattrs[k_com])[0])
+        vel *= afac
+        print(f"    velocities scaled by a = {afac:.4f} to physical km/s")
+    else:
+        print("    WARNING: no conversion factors on the velocity - left as stored")
+
     show_units(VELOCITY)
     show_units(M_STAR)
 
     host_m500, matched = assign_host_mass(host, central, m500)
+    host_vel, _ = assign_host_mass(host, central, vel)  # the central's velocity
     print(f"    {mstar.size} subhaloes, {central.sum()} centrals, "
           f"{(~matched).sum()} with no host match")
     return dict(mstar=mstar, m500_host=host_m500, central=central,
-                vel=vel, matched=matched)
+                vel=vel, host_vel=host_vel, matched=matched)
 
 
 def scan_lightcone(snap, soap, keep, halo_dir, remote, chunk):
@@ -196,6 +209,11 @@ def main():
                         "halo-mass stacks BoundSubhalo/CentreOfMassVelocity is "
                         "the more natural choice - confirm the name with "
                         "01_explore_flamingo.py before switching.")
+    p.add_argument("--mstar-cut", type=float, default=None,
+                   help="apply this log10(M*/Msun) minimum directly instead of "
+                        "solving for the target halo mass (McCarthy+24 fit "
+                        "theirs to lensing: L1_m9 CMASS ~11.2). A low value "
+                        "such as 10.9 lets 04 --min-mstar choose cuts later")
     p.add_argument("--chunk", type=int, default=5_000_000)
     p.add_argument("--out", default=None)
     args = p.parse_args()
@@ -220,7 +238,7 @@ def main():
               f"{cfg['z_min']} < z < {cfg['z_max']}, "
               f"target mean log10 M500c = {cfg['log_m500_target']}")
 
-    pos, z, mstar, m500, central, vel = [], [], [], [], [], []
+    pos, z, mstar, m500, central, vel, hvel = [], [], [], [], [], [], []
 
     for snap in snaps:
         print(f"\n--- snapshot {snap:04d} ---")
@@ -249,6 +267,7 @@ def main():
         m500.append(soap["m500_host"][si_])
         central.append(soap["central"][si_])
         vel.append(soap["vel"][si_])
+        hvel.append(soap["host_vel"][si_])
         del soap
 
     if not pos:
@@ -260,6 +279,7 @@ def main():
     m500 = np.concatenate(m500)
     central = np.concatenate(central)
     vel = np.concatenate(vel)
+    hvel = np.concatenate(hvel)
     print(f"\ncombined: {z.size} haloes, z = {z.min():.4f} - {z.max():.4f}")
 
     in_z = (z >= cfg["z_min"]) & (z < cfg["z_max"])
@@ -289,11 +309,20 @@ def main():
     else:
         in_shell = in_z & (mstar > 0) & (m500 > 0)
         print(f"{in_shell.sum()} of those have M* > 0 and a host mass")
-        sel, cut = solve_stellar_cut(in_shell, mstar, m500, central, cfg, args)
+        if args.mstar_cut is not None:
+            cut = args.mstar_cut
+            if cut < args.precut:
+                print(f"Warning: --mstar-cut {cut} is below --precut "
+                      f"{args.precut}; objects in between were never read")
+            sel = in_shell & (mstar > 10 ** cut)
+            report_selection(sel, cut, m500, central)
+        else:
+            sel, cut = solve_stellar_cut(in_shell, mstar, m500, central, cfg, args)
 
     # Geometry (common to both modes)
     unit, r_comov = lightcone_pos_to_sky(pos[sel])
     v_r = radial_velocity(vel[sel], unit)
+    v_r_host = radial_velocity(hvel[sel], unit)
     print(f"  v_r rms            = {np.sqrt((v_r**2).mean()):.1f} km/s")
     print(f"  v_r mean           = {v_r.mean():.2f} km/s  (should be ~0)")
 
@@ -308,7 +337,8 @@ def main():
     with np.errstate(divide="ignore"):
         log_mstar = np.log10(np.maximum(mstar[sel], 1.0))
     np.savez(out,
-             unit_vec=unit, r_comov=r_comov, v_r_kms=v_r, z=z[sel],
+             unit_vec=unit, r_comov=r_comov, v_r_kms=v_r,
+             v_r_host_kms=v_r_host, z=z[sel],
              log_mstar=log_mstar, log_m500=np.log10(m500[sel]),
              is_central=central[sel], mstar_cut=cut,
              z_min=cfg["z_min"], z_max=cfg["z_max"],
@@ -316,6 +346,17 @@ def main():
              halo_mass_bin=(np.array(args.halo_mass_bin) if halo_mode
                             else np.array([np.nan, np.nan])))
     print(f"\nwrote {out}")
+
+
+def report_selection(sel, cut, m500, central):
+    """
+    Print both readings of 'mean halo mass' for a fixed stellar-mass cut.
+    """
+    print(f"\nstellar-mass cut     log10(M*/Msun) = {cut:.3f}")
+    print(f"  N                  = {sel.sum()}")
+    print(f"  log10<M500c>       = {np.log10(m500[sel].mean()):.3f}")
+    print(f"  <log10 M500c>      = {np.log10(m500[sel]).mean():.3f}")
+    print(f"  satellite fraction = {1 - central[sel].mean():.3f}")
 
 
 def solve_stellar_cut(in_shell, mstar, m500, central, cfg, args):
